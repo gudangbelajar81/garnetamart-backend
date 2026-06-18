@@ -12,12 +12,13 @@ const PORT = process.env.PORT || 5000;
 
 // Konfigurasi Database
 const dbConfig = {
-  host: process.env.DB_HOST || 'localhost',
-  user: process.env.DB_USER || 'root',
-  password: process.env.DB_PASSWORD || '',
-  database: process.env.DB_NAME || 'garnetamart_db',
-  port: process.env.DB_PORT || 3306
+  host: process.env.MYSQLHOST || process.env.DB_HOST || 'localhost',
+  user: process.env.MYSQLUSER || process.env.DB_USER || 'root',
+  password: process.env.MYSQLPASSWORD || process.env.DB_PASSWORD || '',
+  database: process.env.MYSQLDATABASE || process.env.DB_NAME || 'garnetamart_db',
+  port: process.env.MYSQLPORT || process.env.DB_PORT || 3306
 };
+console.log("DB Config:", { host: dbConfig.host, user: dbConfig.user, database: dbConfig.database, port: dbConfig.port });
 
 // Pastikan folder uploads ada
 const uploadDir = path.join(__dirname, 'uploads');
