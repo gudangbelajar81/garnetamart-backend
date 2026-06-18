@@ -191,7 +191,58 @@ app.delete('/api/products/:id', async (req, res) => {
   }
 });
 
+// Otomatis membuat tabel jika belum ada (berguna untuk Railway)
+async function initializeDB() {
+  try {
+    const connection = await mysql.createConnection(dbConfig);
+    
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS admins (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        email VARCHAR(255) NOT NULL UNIQUE,
+        password VARCHAR(255) NOT NULL,
+        name VARCHAR(100) DEFAULT 'Administrator',
+        role VARCHAR(50) DEFAULT 'admin'
+      );
+    `);
+    
+    await connection.query(`
+      INSERT IGNORE INTO admins (email, password, name) 
+      VALUES ('admin@garnetamart.com', 'rahasia123', 'Super Admin')
+    `);
+
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS products (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        price INT NOT NULL,
+        stock INT DEFAULT 0,
+        category VARCHAR(100) DEFAULT 'Umum',
+        image_url VARCHAR(255) DEFAULT '📦'
+      );
+    `);
+
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS orders (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        customer_name VARCHAR(255) NOT NULL,
+        customer_address TEXT NOT NULL,
+        customer_phone VARCHAR(50),
+        total_amount INT NOT NULL,
+        status VARCHAR(50) DEFAULT 'Menunggu Konfirmasi',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+    
+    await connection.end();
+    console.log("✅ Database tables ensured!");
+  } catch(e) {
+    console.error("❌ Database initialization failed:", e.message);
+  }
+}
+
 // Jalankan Server
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
+  await initializeDB();
   console.log(`🚀 BACKEND GARNETAMART MENYALA DI: http://localhost:${PORT}`);
 });
