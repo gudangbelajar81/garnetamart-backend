@@ -18,7 +18,10 @@ const dbConfig = {
   database: process.env.MYSQLDATABASE || process.env.DB_NAME || 'garnetamart_db',
   port: process.env.MYSQLPORT || process.env.DB_PORT || 3306
 };
-console.log("DB Config:", { host: dbConfig.host, user: dbConfig.user, database: dbConfig.database, port: dbConfig.port });
+
+// Gunakan URL langsung jika tersedia (paling aman untuk Railway)
+const dbConnectionConfig = process.env.DATABASE_URL || process.env.MYSQL_URL || dbConfig;
+console.log("Mencoba koneksi database...");
 
 // Pastikan folder uploads ada
 const uploadDir = path.join(__dirname, 'uploads');
@@ -42,7 +45,7 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 // 1. Ambil daftar produk
 app.get('/api/products', async (req, res) => {
   try {
-    const connection = await mysql.createConnection(dbConfig);
+    const connection = await mysql.createConnection(dbConnectionConfig);
     const [rows] = await connection.query("SELECT * FROM products");
     await connection.end();
     res.json({ success: true, data: rows });
@@ -58,7 +61,7 @@ app.post('/api/checkout', async (req, res) => {
   if (!customer_name || !customer_address || !total_amount) return res.status(400).json({ success: false, message: "Data tidak lengkap" });
 
   try {
-    const connection = await mysql.createConnection(dbConfig);
+    const connection = await mysql.createConnection(dbConnectionConfig);
     const [result] = await connection.query(
       "INSERT INTO orders (customer_name, customer_address, customer_phone, total_amount) VALUES (?, ?, ?, ?)",
       [customer_name, customer_address, customer_phone, total_amount]
@@ -75,7 +78,7 @@ app.post('/api/checkout', async (req, res) => {
 app.post('/api/login', async (req, res) => {
   const { email, password } = req.body;
   try {
-    const connection = await mysql.createConnection(dbConfig);
+    const connection = await mysql.createConnection(dbConnectionConfig);
     const [rows] = await connection.query("SELECT * FROM admins WHERE email = ? AND password = ?", [email, password]);
     await connection.end();
 
@@ -90,7 +93,7 @@ app.post('/api/login', async (req, res) => {
 // 4. Daftar Pesanan untuk Dashboard
 app.get('/api/orders', async (req, res) => {
   try {
-    const connection = await mysql.createConnection(dbConfig);
+    const connection = await mysql.createConnection(dbConnectionConfig);
     const [rows] = await connection.query("SELECT * FROM orders ORDER BY id DESC");
     await connection.end();
     res.json({ success: true, data: rows });
@@ -107,7 +110,7 @@ app.put('/api/orders/:id/status', async (req, res) => {
   if (!status) return res.status(400).json({ success: false, message: "Status kosong" });
 
   try {
-    const connection = await mysql.createConnection(dbConfig);
+    const connection = await mysql.createConnection(dbConnectionConfig);
     await connection.query("UPDATE orders SET status=? WHERE id=?", [status, id]);
     await connection.end();
     res.json({ success: true, message: "Status diperbarui" });
@@ -137,7 +140,7 @@ app.post('/api/products', upload.single('image'), async (req, res) => {
       image_url = `/uploads/${filename}`;
     }
 
-    const connection = await mysql.createConnection(dbConfig);
+    const connection = await mysql.createConnection(dbConnectionConfig);
     const [result] = await connection.query("INSERT INTO products (name, price, stock, category, image_url) VALUES (?, ?, ?, ?, ?)", [name, price, stock, productCategory, image_url]);
     await connection.end();
     res.json({ success: true, message: "Produk berhasil ditambahkan", id: result.insertId, image_url, category: productCategory });
@@ -168,7 +171,7 @@ app.put('/api/products/:id', upload.single('image'), async (req, res) => {
       image_url = `/uploads/${filename}`;
     }
 
-    const connection = await mysql.createConnection(dbConfig);
+    const connection = await mysql.createConnection(dbConnectionConfig);
     await connection.query("UPDATE products SET name=?, price=?, stock=?, category=?, image_url=? WHERE id=?", [name, price, stock, productCategory, image_url, id]);
     await connection.end();
     res.json({ success: true, message: "Produk berhasil diubah", image_url, category: productCategory });
@@ -182,7 +185,7 @@ app.put('/api/products/:id', upload.single('image'), async (req, res) => {
 app.delete('/api/products/:id', async (req, res) => {
   const { id } = req.params;
   try {
-    const connection = await mysql.createConnection(dbConfig);
+    const connection = await mysql.createConnection(dbConnectionConfig);
     await connection.query("DELETE FROM products WHERE id=?", [id]);
     await connection.end();
     res.json({ success: true, message: "Produk dihapus" });
@@ -195,7 +198,7 @@ app.delete('/api/products/:id', async (req, res) => {
 // Otomatis membuat tabel jika belum ada (berguna untuk Railway)
 async function initializeDB() {
   try {
-    const connection = await mysql.createConnection(dbConfig);
+    const connection = await mysql.createConnection(dbConnectionConfig);
     
     await connection.query(`
       CREATE TABLE IF NOT EXISTS admins (
