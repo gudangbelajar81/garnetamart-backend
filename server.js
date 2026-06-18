@@ -51,7 +51,7 @@ app.get('/api/products', async (req, res) => {
     res.json({ success: true, data: rows });
   } catch (error) {
     console.error(error);
-    res.status(500).json({ success: false, message: "Gagal mengambil produk" });
+    res.status(500).json({ success: false, message: "Gagal mengambil produk", error_detail: error.message, config: { host: dbConfig.host, user: dbConfig.user, database: dbConfig.database, port: dbConfig.port } });
   }
 });
 
