@@ -57,15 +57,28 @@ app.get('/api/products', async (req, res) => {
 
 // 2. Proses Checkout
 app.post('/api/checkout', async (req, res) => {
-  const { customer_name, customer_address, customer_phone, total_amount, shipping_fee, transport_type, customer_id } = req.body;
+  const { customer_name, customer_address, customer_phone, total_amount, shipping_fee, transport_type, customer_id, cart_items } = req.body;
   if (!customer_name || !customer_address || !total_amount) return res.status(400).json({ success: false, message: "Data tidak lengkap" });
 
   try {
     const connection = await mysql.createConnection(dbConnectionConfig);
+    
+    // Insert Order
     const [result] = await connection.query(
       "INSERT INTO orders (customer_name, customer_address, customer_phone, total_amount, shipping_fee, transport_type, customer_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
       [customer_name, customer_address, customer_phone, total_amount, shipping_fee || 0, transport_type || 'motor', customer_id || null]
     );
+
+    // Update Sales Count untuk item yang dibeli
+    if (cart_items && Array.isArray(cart_items)) {
+      for (const cartItem of cart_items) {
+        if (cartItem.item && cartItem.item.id) {
+          const qty = cartItem.qty || 1;
+          await connection.query("UPDATE products SET sales_count = sales_count + ?, stock = GREATEST(0, stock - ?) WHERE id = ?", [qty, qty, cartItem.item.id]);
+        }
+      }
+    }
+
     await connection.end();
     res.json({ success: true, message: "Pesanan masuk", order_id: result.insertId });
   } catch (error) {
@@ -459,6 +472,7 @@ async function initializeDB() {
         name VARCHAR(255) NOT NULL,
         price INT NOT NULL,
         stock INT DEFAULT 0,
+        sales_count INT DEFAULT 0,
         category VARCHAR(100) DEFAULT 'Umum',
         image_url VARCHAR(255) DEFAULT '📦'
       );
@@ -526,6 +540,7 @@ async function initializeDB() {
     try { await connection.query("ALTER TABLE orders ADD COLUMN transport_type VARCHAR(50) DEFAULT 'motor'"); } catch(e) {}
     try { await connection.query("ALTER TABLE orders ADD COLUMN courier_id INT"); } catch(e) {}
     try { await connection.query("ALTER TABLE orders ADD COLUMN customer_id INT"); } catch(e) {}
+    try { await connection.query("ALTER TABLE products ADD COLUMN sales_count INT DEFAULT 0"); } catch(e) {}
     
     await connection.end();
     console.log("✅ Database tables ensured!");
