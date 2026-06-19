@@ -203,6 +203,25 @@ app.post('/api/upload-qris', upload.single('image'), async (req, res) => {
   }
 });
 
+// 6c. Upload Custom Alarm (File Audio)
+app.post('/api/upload-alarm', upload.single('audio'), async (req, res) => {
+  try {
+    if (req.file) {
+      const filepath = path.join(uploadDir, 'alarm.mp3');
+      // Kita langsung tulis buffer ke file karena ini audio, bukan gambar
+      const fs = require('fs');
+      fs.writeFileSync(filepath, req.file.buffer);
+      res.json({ success: true, message: "Audio alarm berhasil diperbarui", audio_url: `/uploads/alarm.mp3?t=${Date.now()}` });
+    } else {
+      res.status(400).json({ success: false, message: "Tidak ada file audio" });
+    }
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, message: "Gagal upload audio alarm" });
+  }
+});
+
+
 // 7. Edit Produk (dengan Update Gambar)
 app.put('/api/products/:id', upload.single('image'), async (req, res) => {
   const { id } = req.params;
