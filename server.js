@@ -97,25 +97,12 @@ app.post('/api/login', async (req, res) => {
 
     if (rows.length > 0) {
       const dbRole = (rows[0].role || '').toLowerCase();
+      // Normalisasi role: hanya manajer/owner/pemilik → 'Manajer', admin biasa → 'Admin', kasir → 'Kasir'
       let mappedRole = 'Admin';
-      
-      if (dbRole === 'manajer' || dbRole === 'owner' || dbRole === 'pemilik') {
-        mappedRole = 'Manajer';
-      } else if (dbRole === 'kasir') {
-        mappedRole = 'Kasir';
-      } else if (dbRole === 'admin') {
-        // Hanya ID 1 atau yang namanya mengandung "Super" yang diangkat jadi Manajer
-        if (rows[0].id === 1 || rows[0].name.toLowerCase().includes('super')) {
-          mappedRole = 'Manajer';
-        } else {
-          mappedRole = 'Admin';
-        }
-      }
-      
+      if (dbRole === 'manajer' || dbRole === 'owner' || dbRole === 'pemilik') mappedRole = 'Manajer';
+      else if (dbRole === 'kasir') mappedRole = 'Kasir';
       res.json({ success: true, message: "Login Berhasil!", token: "DUMMY_TOKEN_123", user: rows[0].name, role: mappedRole });
-    } else {
-      res.status(401).json({ success: false, message: "Email atau Password salah!" });
-    }
+    } else res.status(401).json({ success: false, message: "Email atau Password salah!" });
   } catch (error) {
     console.error(error);
     res.status(500).json({ success: false, message: "Terjadi kesalahan" });
