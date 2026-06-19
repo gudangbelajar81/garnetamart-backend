@@ -363,6 +363,46 @@ app.post('/api/settings/banner', upload.single('image'), async (req, res) => {
   }
 });
 
+// 14. Generate Banner via AI (Pollinations)
+app.post('/api/settings/banner/ai', async (req, res) => {
+  const { prompt } = req.body;
+  if (!prompt) return res.status(400).json({ success: false, message: "Prompt wajib diisi" });
+
+  try {
+    // Gunakan Pollinations AI (Free Text-to-Image API)
+    // Format URL dengan seed random agar tidak ter-cache
+    const seed = Math.floor(Math.random() * 100000);
+    const aiUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=800&height=400&nologo=true&seed=${seed}`;
+    
+    // Fetch gambar dari URL
+    const response = await fetch(aiUrl);
+    if (!response.ok) throw new Error("Gagal mengambil gambar dari AI");
+    
+    const arrayBuffer = await response.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+
+    // Simpan menggunakan sharp
+    const filename = `banner-ai-${Date.now()}.webp`;
+    const filepath = path.join(__dirname, 'uploads', filename);
+    await sharp(buffer)
+      .webp({ quality: 80 })
+      .toFile(filepath);
+      
+    const fileUrl = `/uploads/${filename}`;
+
+    // Update DB
+    const connection = await mysql.createConnection(dbConnectionConfig);
+    await connection.query("UPDATE settings SET setting_value = ? WHERE setting_key = 'promo_banner_active'", ['1']);
+    await connection.query("UPDATE settings SET setting_value = ? WHERE setting_key = 'promo_banner_url'", [fileUrl]);
+    await connection.end();
+
+    res.json({ success: true, message: "Banner AI berhasil dibuat dan dipasang", url: fileUrl });
+  } catch (error) {
+    console.error("AI Banner Error:", error);
+    res.status(500).json({ success: false, message: "Gagal mengenerate banner AI" });
+  }
+});
+
 // Otomatis membuat tabel jika belum ada (berguna untuk Railway)
 async function initializeDB() {
   try {
