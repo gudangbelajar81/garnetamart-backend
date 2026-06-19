@@ -327,61 +327,69 @@ app.get('/api/settings', async (req, res) => {
   }
 });
 
-// 13. Update Banner (Upload & Toggle)
-app.post('/api/settings/banner', upload.single('image'), async (req, res) => {
-  const { promo_banner_active } = req.body;
-  let fileUrl = null;
-
+// 13. Ambil Daftar Banner
+app.get('/api/banners', async (req, res) => {
   try {
-    if (req.file) {
-      const filename = `banner-${Date.now()}.webp`;
-      const filepath = path.join(__dirname, 'uploads', filename);
-      await sharp(req.file.buffer)
-        .resize(800) // Ukuran banner
-        .webp({ quality: 80 })
-        .toFile(filepath);
-      fileUrl = `/uploads/${filename}`;
-    }
-
     const connection = await mysql.createConnection(dbConnectionConfig);
-    
-    // Update status aktif
-    if (promo_banner_active !== undefined) {
-      await connection.query("UPDATE settings SET setting_value = ? WHERE setting_key = 'promo_banner_active'", [promo_banner_active]);
-    }
-
-    // Update URL jika ada upload
-    if (fileUrl) {
-      await connection.query("UPDATE settings SET setting_value = ? WHERE setting_key = 'promo_banner_url'", [fileUrl]);
-    }
-
+    const [rows] = await connection.query("SELECT * FROM banners ORDER BY id DESC");
     await connection.end();
-    res.json({ success: true, message: "Banner berhasil diperbarui", url: fileUrl });
+    res.json({ success: true, data: rows });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ success: false, message: "Gagal memperbarui banner" });
+    res.status(500).json({ success: false, message: "Gagal mengambil daftar banner" });
   }
 });
 
-// 14. Generate Banner via AI (Pollinations)
-app.post('/api/settings/banner/ai', async (req, res) => {
+// 14. Upload Banner Manual
+app.post('/api/banners', upload.single('image'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ success: false, message: "Tidak ada file" });
+
+  try {
+    const connection = await mysql.createConnection(dbConnectionConfig);
+    const [countCheck] = await connection.query("SELECT COUNT(*) as count FROM banners");
+    if (countCheck[0].count >= 10) {
+      await connection.end();
+      return res.status(400).json({ success: false, message: "Maksimal 10 banner. Harap hapus banner lama." });
+    }
+
+    const filename = `banner-${Date.now()}.webp`;
+    const filepath = path.join(__dirname, 'uploads', filename);
+    await sharp(req.file.buffer)
+      .resize(800) // Ukuran banner
+      .webp({ quality: 80 })
+      .toFile(filepath);
+    const fileUrl = `/uploads/${filename}`;
+
+    await connection.query("INSERT INTO banners (image_url, is_active) VALUES (?, 1)", [fileUrl]);
+    await connection.end();
+    res.json({ success: true, message: "Banner berhasil diunggah", url: fileUrl });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, message: "Gagal mengunggah banner" });
+  }
+});
+
+// 15. Generate Banner via AI (Pollinations)
+app.post('/api/banners/ai', async (req, res) => {
   const { prompt } = req.body;
   if (!prompt) return res.status(400).json({ success: false, message: "Prompt wajib diisi" });
 
   try {
-    // Gunakan Pollinations AI (Free Text-to-Image API)
-    // Format URL dengan seed random agar tidak ter-cache
+    const connection = await mysql.createConnection(dbConnectionConfig);
+    const [countCheck] = await connection.query("SELECT COUNT(*) as count FROM banners");
+    if (countCheck[0].count >= 10) {
+      await connection.end();
+      return res.status(400).json({ success: false, message: "Maksimal 10 banner. Harap hapus banner lama." });
+    }
+
     const seed = Math.floor(Math.random() * 100000);
     const aiUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=800&height=400&nologo=true&seed=${seed}`;
     
-    // Fetch gambar dari URL
     const response = await fetch(aiUrl);
     if (!response.ok) throw new Error("Gagal mengambil gambar dari AI");
     
     const arrayBuffer = await response.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
-    // Simpan menggunakan sharp
     const filename = `banner-ai-${Date.now()}.webp`;
     const filepath = path.join(__dirname, 'uploads', filename);
     await sharp(buffer)
@@ -390,16 +398,38 @@ app.post('/api/settings/banner/ai', async (req, res) => {
       
     const fileUrl = `/uploads/${filename}`;
 
-    // Update DB
-    const connection = await mysql.createConnection(dbConnectionConfig);
-    await connection.query("UPDATE settings SET setting_value = ? WHERE setting_key = 'promo_banner_active'", ['1']);
-    await connection.query("UPDATE settings SET setting_value = ? WHERE setting_key = 'promo_banner_url'", [fileUrl]);
+    await connection.query("INSERT INTO banners (image_url, is_active) VALUES (?, 1)", [fileUrl]);
     await connection.end();
 
-    res.json({ success: true, message: "Banner AI berhasil dibuat dan dipasang", url: fileUrl });
+    res.json({ success: true, message: "Banner AI berhasil dibuat dan ditambahkan", url: fileUrl });
   } catch (error) {
     console.error("AI Banner Error:", error);
     res.status(500).json({ success: false, message: "Gagal mengenerate banner AI" });
+  }
+});
+
+// 16. Toggle Active Status
+app.put('/api/banners/:id', async (req, res) => {
+  const { is_active } = req.body;
+  try {
+    const connection = await mysql.createConnection(dbConnectionConfig);
+    await connection.query("UPDATE banners SET is_active = ? WHERE id = ?", [is_active ? 1 : 0, req.params.id]);
+    await connection.end();
+    res.json({ success: true, message: "Status banner diperbarui" });
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Gagal update banner" });
+  }
+});
+
+// 17. Hapus Banner
+app.delete('/api/banners/:id', async (req, res) => {
+  try {
+    const connection = await mysql.createConnection(dbConnectionConfig);
+    await connection.query("DELETE FROM banners WHERE id = ?", [req.params.id]);
+    await connection.end();
+    res.json({ success: true, message: "Banner dihapus" });
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Gagal menghapus banner" });
   }
 });
 
@@ -471,6 +501,15 @@ async function initializeDB() {
       CREATE TABLE IF NOT EXISTS settings (
         setting_key VARCHAR(50) PRIMARY KEY,
         setting_value TEXT NOT NULL
+      );
+    `);
+
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS banners (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        image_url VARCHAR(255) NOT NULL,
+        is_active BOOLEAN DEFAULT true,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `);
 
