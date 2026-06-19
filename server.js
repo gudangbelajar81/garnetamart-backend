@@ -57,14 +57,14 @@ app.get('/api/products', async (req, res) => {
 
 // 2. Proses Checkout
 app.post('/api/checkout', async (req, res) => {
-  const { customer_name, customer_address, customer_phone, total_amount } = req.body;
+  const { customer_name, customer_address, customer_phone, total_amount, shipping_fee, transport_type } = req.body;
   if (!customer_name || !customer_address || !total_amount) return res.status(400).json({ success: false, message: "Data tidak lengkap" });
 
   try {
     const connection = await mysql.createConnection(dbConnectionConfig);
     const [result] = await connection.query(
-      "INSERT INTO orders (customer_name, customer_address, customer_phone, total_amount) VALUES (?, ?, ?, ?)",
-      [customer_name, customer_address, customer_phone, total_amount]
+      "INSERT INTO orders (customer_name, customer_address, customer_phone, total_amount, shipping_fee, transport_type) VALUES (?, ?, ?, ?, ?, ?)",
+      [customer_name, customer_address, customer_phone, total_amount, shipping_fee || 0, transport_type || 'motor']
     );
     await connection.end();
     res.json({ success: true, message: "Pesanan masuk", order_id: result.insertId });
@@ -117,6 +117,21 @@ app.put('/api/orders/:id/status', async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ success: false, message: "Gagal update status" });
+  }
+});
+
+// 5b. Tugaskan Kurir
+app.put('/api/orders/:id/assign', async (req, res) => {
+  const { id } = req.params;
+  const { courier_id } = req.body;
+  try {
+    const connection = await mysql.createConnection(dbConnectionConfig);
+    await connection.query("UPDATE orders SET courier_id=?, status='Sedang Diantar' WHERE id=?", [courier_id, id]);
+    await connection.end();
+    res.json({ success: true, message: "Kurir ditugaskan" });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, message: "Gagal menugaskan kurir" });
   }
 });
 
@@ -195,6 +210,61 @@ app.delete('/api/products/:id', async (req, res) => {
   }
 });
 
+// --- API KURIR ---
+
+// Tambah Kurir
+app.post('/api/couriers', async (req, res) => {
+  const { name, pin } = req.body;
+  try {
+    const connection = await mysql.createConnection(dbConnectionConfig);
+    const [result] = await connection.query("INSERT INTO couriers (name, pin) VALUES (?, ?)", [name, pin]);
+    await connection.end();
+    res.json({ success: true, message: "Kurir ditambahkan", id: result.insertId });
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Gagal menambah kurir (PIN mungkin sudah dipakai)" });
+  }
+});
+
+// Ambil Daftar Kurir
+app.get('/api/couriers', async (req, res) => {
+  try {
+    const connection = await mysql.createConnection(dbConnectionConfig);
+    const [rows] = await connection.query("SELECT id, name, is_active FROM couriers ORDER BY name ASC");
+    await connection.end();
+    res.json({ success: true, data: rows });
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Gagal mengambil data kurir" });
+  }
+});
+
+// Login Kurir
+app.post('/api/couriers/login', async (req, res) => {
+  const { pin } = req.body;
+  try {
+    const connection = await mysql.createConnection(dbConnectionConfig);
+    const [rows] = await connection.query("SELECT * FROM couriers WHERE pin = ? AND is_active = true", [pin]);
+    await connection.end();
+    if (rows.length > 0) res.json({ success: true, message: "Login Berhasil", data: rows[0] });
+    else res.status(401).json({ success: false, message: "PIN Salah atau Kurir tidak aktif" });
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Terjadi kesalahan sistem" });
+  }
+});
+
+// Ambil Pesanan Milik Kurir
+app.get('/api/couriers/:id/orders', async (req, res) => {
+  const { id } = req.params;
+  try {
+    const connection = await mysql.createConnection(dbConnectionConfig);
+    // Tampilkan order yang Sedang Diantar atau Selesai hari ini oleh kurir ini
+    const [rows] = await connection.query("SELECT * FROM orders WHERE courier_id = ? ORDER BY id DESC", [id]);
+    await connection.end();
+    res.json({ success: true, data: rows });
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Gagal mengambil pesanan kurir" });
+  }
+});
+
 // Otomatis membuat tabel jika belum ada (berguna untuk Railway)
 async function initializeDB() {
   try {
@@ -237,6 +307,21 @@ async function initializeDB() {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `);
+    
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS couriers (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        name VARCHAR(100) NOT NULL,
+        pin VARCHAR(20) NOT NULL UNIQUE,
+        is_active BOOLEAN DEFAULT true,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    // Migrasi Alter Table aman
+    try { await connection.query("ALTER TABLE orders ADD COLUMN shipping_fee INT DEFAULT 0"); } catch(e) {}
+    try { await connection.query("ALTER TABLE orders ADD COLUMN transport_type VARCHAR(50) DEFAULT 'motor'"); } catch(e) {}
+    try { await connection.query("ALTER TABLE orders ADD COLUMN courier_id INT"); } catch(e) {}
     
     await connection.end();
     console.log("✅ Database tables ensured!");
