@@ -57,14 +57,14 @@ app.get('/api/products', async (req, res) => {
 
 // 2. Proses Checkout
 app.post('/api/checkout', async (req, res) => {
-  const { customer_name, customer_address, customer_phone, total_amount, shipping_fee, transport_type } = req.body;
+  const { customer_name, customer_address, customer_phone, total_amount, shipping_fee, transport_type, customer_id } = req.body;
   if (!customer_name || !customer_address || !total_amount) return res.status(400).json({ success: false, message: "Data tidak lengkap" });
 
   try {
     const connection = await mysql.createConnection(dbConnectionConfig);
     const [result] = await connection.query(
-      "INSERT INTO orders (customer_name, customer_address, customer_phone, total_amount, shipping_fee, transport_type) VALUES (?, ?, ?, ?, ?, ?)",
-      [customer_name, customer_address, customer_phone, total_amount, shipping_fee || 0, transport_type || 'motor']
+      "INSERT INTO orders (customer_name, customer_address, customer_phone, total_amount, shipping_fee, transport_type, customer_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      [customer_name, customer_address, customer_phone, total_amount, shipping_fee || 0, transport_type || 'motor', customer_id || null]
     );
     await connection.end();
     res.json({ success: true, message: "Pesanan masuk", order_id: result.insertId });
@@ -265,6 +265,51 @@ app.get('/api/couriers/:id/orders', async (req, res) => {
   }
 });
 
+// --- API CUSTOMER (PEMBELI) ---
+
+// Register Customer
+app.post('/api/customers/register', async (req, res) => {
+  const { phone, password, name, address } = req.body;
+  try {
+    const connection = await mysql.createConnection(dbConnectionConfig);
+    // Cek apakah nomor WA sudah terdaftar
+    const [existing] = await connection.query("SELECT id FROM customers WHERE phone = ?", [phone]);
+    if (existing.length > 0) {
+      await connection.end();
+      return res.status(400).json({ success: false, message: "Nomor WA sudah terdaftar!" });
+    }
+    
+    // Insert pelanggan baru
+    const [result] = await connection.query(
+      "INSERT INTO customers (phone, password, name, address) VALUES (?, ?, ?, ?)",
+      [phone, password, name, address]
+    );
+    await connection.end();
+    
+    res.json({ success: true, message: "Pendaftaran berhasil!", data: { id: result.insertId, phone, name, address } });
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Gagal mendaftar" });
+  }
+});
+
+// Login Customer
+app.post('/api/customers/login', async (req, res) => {
+  const { phone, password } = req.body;
+  try {
+    const connection = await mysql.createConnection(dbConnectionConfig);
+    const [rows] = await connection.query("SELECT id, phone, name, address FROM customers WHERE phone = ? AND password = ?", [phone, password]);
+    await connection.end();
+    
+    if (rows.length > 0) {
+      res.json({ success: true, message: "Login berhasil", data: rows[0] });
+    } else {
+      res.status(401).json({ success: false, message: "Nomor WA atau PIN/Password salah" });
+    }
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Kesalahan server" });
+  }
+});
+
 // Otomatis membuat tabel jika belum ada (berguna untuk Railway)
 async function initializeDB() {
   try {
@@ -318,10 +363,22 @@ async function initializeDB() {
       );
     `);
 
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS customers (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        phone VARCHAR(50) NOT NULL UNIQUE,
+        password VARCHAR(255) NOT NULL,
+        name VARCHAR(100) NOT NULL,
+        address TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
     // Migrasi Alter Table aman
     try { await connection.query("ALTER TABLE orders ADD COLUMN shipping_fee INT DEFAULT 0"); } catch(e) {}
     try { await connection.query("ALTER TABLE orders ADD COLUMN transport_type VARCHAR(50) DEFAULT 'motor'"); } catch(e) {}
     try { await connection.query("ALTER TABLE orders ADD COLUMN courier_id INT"); } catch(e) {}
+    try { await connection.query("ALTER TABLE orders ADD COLUMN customer_id INT"); } catch(e) {}
     
     await connection.end();
     console.log("✅ Database tables ensured!");
