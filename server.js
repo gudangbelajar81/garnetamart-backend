@@ -95,8 +95,14 @@ app.post('/api/login', async (req, res) => {
     const [rows] = await connection.query("SELECT * FROM admins WHERE email = ? AND password = ?", [email, password]);
     await connection.end();
 
-    if (rows.length > 0) res.json({ success: true, message: "Login Berhasil!", token: "DUMMY_TOKEN_123", user: rows[0].name, role: rows[0].role });
-    else res.status(401).json({ success: false, message: "Email atau Password salah!" });
+    if (rows.length > 0) {
+      const dbRole = (rows[0].role || '').toLowerCase();
+      // Normalisasi: admin/manajer/owner → 'Manajer', kasir/kasir → 'Kasir', sisanya 'Admin'
+      let mappedRole = 'Admin';
+      if (dbRole === 'admin' || dbRole === 'manajer' || dbRole === 'owner' || dbRole === 'pemilik') mappedRole = 'Manajer';
+      else if (dbRole === 'kasir') mappedRole = 'Kasir';
+      res.json({ success: true, message: "Login Berhasil!", token: "DUMMY_TOKEN_123", user: rows[0].name, role: mappedRole });
+    } else res.status(401).json({ success: false, message: "Email atau Password salah!" });
   } catch (error) {
     console.error(error);
     res.status(500).json({ success: false, message: "Terjadi kesalahan" });
