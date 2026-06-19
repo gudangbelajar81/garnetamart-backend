@@ -310,6 +310,59 @@ app.post('/api/customers/login', async (req, res) => {
   }
 });
 
+// 12. Ambil Settings
+app.get('/api/settings', async (req, res) => {
+  try {
+    const connection = await mysql.createConnection(dbConnectionConfig);
+    const [rows] = await connection.query("SELECT setting_key, setting_value FROM settings");
+    await connection.end();
+    
+    // Convert array of objects to key-value pairs
+    const settingsObj = {};
+    rows.forEach(r => { settingsObj[r.setting_key] = r.setting_value; });
+    
+    res.json({ success: true, data: settingsObj });
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Gagal mengambil pengaturan" });
+  }
+});
+
+// 13. Update Banner (Upload & Toggle)
+app.post('/api/settings/banner', upload.single('image'), async (req, res) => {
+  const { promo_banner_active } = req.body;
+  let fileUrl = null;
+
+  try {
+    if (req.file) {
+      const filename = `banner-${Date.now()}.webp`;
+      const filepath = path.join(__dirname, 'uploads', filename);
+      await sharp(req.file.buffer)
+        .resize(800) // Ukuran banner
+        .webp({ quality: 80 })
+        .toFile(filepath);
+      fileUrl = `/uploads/${filename}`;
+    }
+
+    const connection = await mysql.createConnection(dbConnectionConfig);
+    
+    // Update status aktif
+    if (promo_banner_active !== undefined) {
+      await connection.query("UPDATE settings SET setting_value = ? WHERE setting_key = 'promo_banner_active'", [promo_banner_active]);
+    }
+
+    // Update URL jika ada upload
+    if (fileUrl) {
+      await connection.query("UPDATE settings SET setting_value = ? WHERE setting_key = 'promo_banner_url'", [fileUrl]);
+    }
+
+    await connection.end();
+    res.json({ success: true, message: "Banner berhasil diperbarui", url: fileUrl });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, message: "Gagal memperbarui banner" });
+  }
+});
+
 // Otomatis membuat tabel jika belum ada (berguna untuk Railway)
 async function initializeDB() {
   try {
@@ -372,6 +425,21 @@ async function initializeDB() {
         address TEXT NOT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
+    `);
+
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS settings (
+        setting_key VARCHAR(50) PRIMARY KEY,
+        setting_value TEXT NOT NULL
+      );
+    `);
+
+    // Inisialisasi default settings
+    await connection.query(`
+      INSERT IGNORE INTO settings (setting_key, setting_value)
+      VALUES 
+        ('promo_banner_url', '/promo_banner.png'),
+        ('promo_banner_active', '1')
     `);
 
     // Migrasi Alter Table aman
