@@ -178,6 +178,25 @@ app.post('/api/products', upload.single('image'), async (req, res) => {
   }
 });
 
+// 6b. Upload QRIS (Hanya Gambar, akan dioverwrite)
+app.post('/api/upload-qris', upload.single('image'), async (req, res) => {
+  try {
+    if (req.file) {
+      const filepath = path.join(uploadDir, 'qris.jpg');
+      await sharp(req.file.buffer)
+        .resize({ width: 600, withoutEnlargement: true })
+        .jpeg({ quality: 90 })
+        .toFile(filepath);
+      res.json({ success: true, message: "QRIS berhasil diperbarui", image_url: `/uploads/qris.jpg?t=${Date.now()}` });
+    } else {
+      res.status(400).json({ success: false, message: "Tidak ada gambar" });
+    }
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, message: "Gagal upload QRIS" });
+  }
+});
+
 // 7. Edit Produk (dengan Update Gambar)
 app.put('/api/products/:id', upload.single('image'), async (req, res) => {
   const { id } = req.params;
