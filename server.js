@@ -260,13 +260,14 @@ app.post('/api/upload-alarm', upload.single('audio'), async (req, res) => {
 // 7. Edit Produk (dengan Update Gambar)
 app.put('/api/products/:id', upload.single('image'), async (req, res) => {
   const { id } = req.params;
-  const { name, price, stock, category, old_image_url } = req.body;
+  const { name, price, stock, category } = req.body;
   const productCategory = category || 'Umum';
-  let image_url = old_image_url || '📦';
 
   try {
-    // Jika ada file baru yang diupload, proses lagi dengan sharp
+    const connection = await mysql.createConnection(dbConnectionConfig);
+
     if (req.file) {
+      // Jika ada file baru yang diupload, proses lagi dengan sharp
       const filename = `product-${Date.now()}.webp`;
       const filepath = path.join(uploadDir, filename);
       
@@ -275,13 +276,16 @@ app.put('/api/products/:id', upload.single('image'), async (req, res) => {
         .webp({ quality: 80 })
         .toFile(filepath);
         
-      image_url = `/uploads/${filename}`;
+      const image_url = `/uploads/${filename}`;
+      await connection.query("UPDATE products SET name=?, price=?, stock=?, category=?, image_url=? WHERE id=?", [name, price, stock, productCategory, image_url, id]);
+      await connection.end();
+      res.json({ success: true, message: "Produk dan gambar berhasil diubah", image_url, category: productCategory });
+    } else {
+      // Jika TIDAK ADA gambar baru, jangan sentuh kolom image_url agar gambar lama aman!
+      await connection.query("UPDATE products SET name=?, price=?, stock=?, category=? WHERE id=?", [name, price, stock, productCategory, id]);
+      await connection.end();
+      res.json({ success: true, message: "Produk berhasil diubah (Tanpa ubah gambar)", category: productCategory });
     }
-
-    const connection = await mysql.createConnection(dbConnectionConfig);
-    await connection.query("UPDATE products SET name=?, price=?, stock=?, category=?, image_url=? WHERE id=?", [name, price, stock, productCategory, image_url, id]);
-    await connection.end();
-    res.json({ success: true, message: "Produk berhasil diubah", image_url, category: productCategory });
   } catch (error) {
     console.error(error);
     res.status(500).json({ success: false, message: "Gagal mengubah produk" });
@@ -628,6 +632,36 @@ async function initializeDB() {
     console.error("❌ Database initialization failed:", e.message);
   }
 }
+
+// ROBOT PEMBERSIH FOTO BUKTI PENGIRIMAN (Setiap 24 Jam)
+setInterval(async () => {
+  try {
+    const connection = await mysql.createConnection(dbConnectionConfig);
+    // Cari pesanan yang sudah lebih dari 7 hari dan memiliki foto bukti
+    const [oldOrders] = await connection.query("SELECT id, proof_of_delivery FROM orders WHERE status = 'Selesai' AND created_at < NOW() - INTERVAL 7 DAY AND proof_of_delivery IS NOT NULL");
+    
+    for (let order of oldOrders) {
+      if (order.proof_of_delivery) {
+        // Hapus file fisik di hardisk
+        const filename = order.proof_of_delivery.replace('/uploads/', '');
+        const filepath = path.join(__dirname, 'uploads', filename);
+        if (fs.existsSync(filepath)) {
+          fs.unlinkSync(filepath);
+        }
+      }
+    }
+    
+    // Set field proof_of_delivery jadi NULL agar bersih di database
+    if (oldOrders.length > 0) {
+      await connection.query("UPDATE orders SET proof_of_delivery = NULL WHERE status = 'Selesai' AND created_at < NOW() - INTERVAL 7 DAY");
+      console.log(`🤖 Robot Pembersih: Berhasil menghapus ${oldOrders.length} foto bukti lama (Usia > 7 Hari).`);
+    }
+    
+    await connection.end();
+  } catch (err) {
+    console.error("❌ Robot Pembersih Error:", err);
+  }
+}, 24 * 60 * 60 * 1000); // 24 jam sekali berjalan
 
 // Jalankan Server
 app.listen(PORT, async () => {
