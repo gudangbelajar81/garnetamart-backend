@@ -139,6 +139,41 @@ app.put('/api/orders/:id/status', async (req, res) => {
   }
 });
 
+// 5a. Selesaikan Pesanan dengan Bukti Foto
+app.post('/api/orders/:id/complete', upload.single('proof_image'), async (req, res) => {
+  const { id } = req.params;
+  try {
+    let proof_url = null;
+    if (req.file) {
+      const filename = `proof_${id}_${Date.now()}.jpg`;
+      const filepath = path.join(uploadDir, filename);
+      await sharp(req.file.buffer)
+        .resize({ width: 800, withoutEnlargement: true })
+        .jpeg({ quality: 80 })
+        .toFile(filepath);
+      proof_url = `/uploads/${filename}`;
+    } else {
+      return res.status(400).json({ success: false, message: "Foto bukti pengiriman wajib diunggah" });
+    }
+
+    const connection = await mysql.createConnection(dbConnectionConfig);
+    await connection.query("UPDATE orders SET status='Selesai', proof_of_delivery=? WHERE id=?", [proof_url, id]);
+    
+    // Update sales_count produk
+    const [items] = await connection.query("SELECT product_id, quantity FROM order_items WHERE order_id=?", [id]);
+    for(let item of items) {
+      await connection.query("UPDATE products SET sales_count = sales_count + ? WHERE id=?", [item.quantity, item.product_id]);
+    }
+
+    await connection.end();
+    res.json({ success: true, message: "Pesanan diselesaikan beserta bukti foto", proof_url });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, message: "Gagal menyelesaikan pesanan" });
+  }
+});
+
+
 // 5b. Tugaskan Kurir
 app.put('/api/orders/:id/assign', async (req, res) => {
   const { id } = req.params;
@@ -584,6 +619,7 @@ async function initializeDB() {
     try { await connection.query("ALTER TABLE orders ADD COLUMN transport_type VARCHAR(50) DEFAULT 'motor'"); } catch(e) {}
     try { await connection.query("ALTER TABLE orders ADD COLUMN courier_id INT"); } catch(e) {}
     try { await connection.query("ALTER TABLE orders ADD COLUMN customer_id INT"); } catch(e) {}
+    try { await connection.query("ALTER TABLE orders ADD COLUMN proof_of_delivery VARCHAR(255) NULL"); } catch(e) {}
     try { await connection.query("ALTER TABLE products ADD COLUMN sales_count INT DEFAULT 0"); } catch(e) {}
     
     await connection.end();
