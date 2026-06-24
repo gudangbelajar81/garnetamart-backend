@@ -148,6 +148,7 @@ app.post('/api/orders/:id/complete', upload.single('proof_image'), async (req, r
       const filename = `proof_${id}_${Date.now()}.jpg`;
       const filepath = path.join(uploadDir, filename);
       await sharp(req.file.buffer)
+        .rotate()
         .resize({ width: 800, withoutEnlargement: true })
         .jpeg({ quality: 80 })
         .toFile(filepath);
@@ -202,6 +203,7 @@ app.post('/api/products', upload.single('image'), async (req, res) => {
       
       // Proses Kompresi Sharp (Ubah ke WebP, resize max width 500px, kualitas 80%)
       await sharp(req.file.buffer)
+        .rotate()
         .resize({ width: 500, withoutEnlargement: true })
         .webp({ quality: 80 })
         .toFile(filepath);
@@ -225,6 +227,7 @@ app.post('/api/upload-qris', upload.single('image'), async (req, res) => {
     if (req.file) {
       const filepath = path.join(uploadDir, 'qris.jpg');
       await sharp(req.file.buffer)
+        .rotate()
         .resize({ width: 600, withoutEnlargement: true })
         .jpeg({ quality: 90 })
         .toFile(filepath);
@@ -272,6 +275,7 @@ app.put('/api/products/:id', upload.single('image'), async (req, res) => {
       const filepath = path.join(uploadDir, filename);
       
       await sharp(req.file.buffer)
+        .rotate()
         .resize({ width: 500, withoutEnlargement: true })
         .webp({ quality: 80 })
         .toFile(filepath);
@@ -450,6 +454,7 @@ app.post('/api/banners', upload.single('image'), async (req, res) => {
     const filename = `banner-${Date.now()}.webp`;
     const filepath = path.join(__dirname, 'uploads', filename);
     await sharp(req.file.buffer)
+      .rotate()
       .resize(800) // Ukuran banner
       .webp({ quality: 80 })
       .toFile(filepath);
